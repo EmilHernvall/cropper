@@ -91,6 +91,10 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	ctx.rectLeft = -1;
 	ctx.rectWidth = -1;
 	ctx.rectHeight = -1;
+	ctx.oldWidth = -1;
+	ctx.oldHeight = -1;
+	ctx.x = -1;
+	ctx.y = -1;
 
 	// Create main window
 	hWnd = CreateWindow(WNDCLASS, TITLE, WS_OVERLAPPEDWINDOW,
@@ -207,6 +211,7 @@ VOID Paint(HWND hWnd, ApplicationContext *ctx)
 	RECT rc;
 	HBITMAP hbmMem = NULL;
 	HANDLE hOld = NULL;
+	DOUBLE widthRatio, heightRatio;
 
 	// Only paint if we're not resizing the window
 	if (ctx->allowPaint) {
@@ -304,6 +309,19 @@ VOID Paint(HWND hWnd, ApplicationContext *ctx)
 		// Draw the rectangle. This won't have any effect while mouse movement occurs,
 		// since the area is masked out.
 		if (ctx->rectLeft != -1) {
+			if (ctx->oldWidth != -1) {
+				widthRatio = ctx->imageWidth / (double)ctx->oldWidth;
+				heightRatio = ctx->imageHeight / (double)ctx->oldHeight;
+
+				ctx->rectLeft = ctx->imageLeft + (int)((ctx->rectLeft - ctx->oldLeft) * widthRatio);
+				ctx->rectWidth = (int)(ctx->rectWidth * widthRatio);
+				ctx->rectTop = ctx->imageTop + (int)((ctx->rectTop - ctx->oldTop) * heightRatio);
+				ctx->rectHeight = (int)(ctx->rectHeight * heightRatio);
+
+				ctx->oldWidth = -1;
+				ctx->oldHeight = -1;
+			}
+
 			Graphics graphics(hdc);
 			graphics.DrawRectangle(new Pen(Color::Red, 1), 
 				RectF((Gdiplus::REAL)ctx->rectLeft, (Gdiplus::REAL)ctx->rectTop, 
@@ -320,6 +338,10 @@ VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 	HDC hdc;
 	PAINTSTRUCT ps;
 	RECT rc, rc2;
+
+	if (ctx->x == -1) {
+		return;
+	}
 
 	// Calculate the selection rectangle
 	left = (ctx->x < x ? ctx->x : x);
@@ -387,7 +409,7 @@ INT GetY(ApplicationContext *ctx, INT y)
 	if (y < ctx->imageTop) {
 		y = ctx->imageTop;
 	} else if (y >= ctx->imageTop + ctx->imageHeight) {
-		y = ctx->imageTop + ctx->imageHeight;
+		y = ctx->imageTop + ctx->imageHeight - 1;
 	}
 
 	return y;
@@ -419,6 +441,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	// We don't allow repainting while resizing the window.
 	case WM_ENTERSIZEMOVE:
 		ctx->allowPaint = FALSE;
+
+		ctx->oldLeft = ctx->imageLeft;
+		ctx->oldTop = ctx->imageTop;
+		ctx->oldWidth = ctx->imageWidth;
+		ctx->oldHeight = ctx->imageHeight;
 		return 0;
 	// We're done resizing, so we can reactivate painting.
 	case WM_EXITSIZEMOVE:

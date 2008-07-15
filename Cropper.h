@@ -1,6 +1,6 @@
 #pragma once
 
-#define TITLE TEXT("Cropper")
+#define TITLE TEXT("Cropper - Click to select, ESC to Save")
 #define WNDCLASS TEXT("CropFrame")
 
 typedef struct {
@@ -20,4 +20,6 @@ typedef struct {
 	INT imageLeft, imageTop, imageWidth, imageHeight;
 	// Position of the rectangle in the window coordinate system
 	INT rectLeft, rectTop, rectWidth, rectHeight;
+	
+	INT oldLeft, oldTop, oldWidth, oldHeight;
 } ApplicationContext;
