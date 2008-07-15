@@ -316,7 +316,7 @@ VOID Paint(HWND hWnd, ApplicationContext *ctx)
 
 VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 {
-	int newWidth, newHeight, top, left;
+	int newWidth, newHeight, top, left, right, bottom;
 	HDC hdc;
 	PAINTSTRUCT ps;
 	RECT rc, rc2;
@@ -324,6 +324,8 @@ VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 	// Calculate the selection rectangle
 	left = (ctx->x < x ? ctx->x : x);
 	top = (ctx->y < y ? ctx->y : y);
+	right = (ctx->x < x ? x : ctx->x);
+	bottom = (ctx->y < y ? y : ctx->y);
 	newWidth = (ctx->x < x ? x - ctx->x : ctx->x - x);
 	newHeight = (ctx->y < y ? y - ctx->y : ctx->y - y);
 
@@ -341,8 +343,8 @@ VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 	// including the rectangle borders.
 	rc.left = left;
 	rc.top = top;
-	rc.right = (ctx->x < x ? x : ctx->x) + 1;
-	rc.bottom = (ctx->y < y ? y : ctx->y) + 1;
+	rc.right = right + 1;
+	rc.bottom = bottom + 1;
 	ValidateRect(hWnd, &rc);
 
 	// Invalidate everything inside the rectangle borders
@@ -369,10 +371,33 @@ VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 	EndPaint(hWnd, &ps);
 }
 
+INT GetX(ApplicationContext *ctx, INT x)
+{
+	if (x < ctx->imageLeft) {
+		x = ctx->imageLeft;
+	} else if (x > ctx->imageLeft + ctx->imageWidth) {
+		x = ctx->imageLeft + ctx->imageWidth;
+	}
+
+	return x;
+}
+
+INT GetY(ApplicationContext *ctx, INT y)
+{
+	if (y < ctx->imageTop) {
+		y = ctx->imageTop;
+	} else if (y >= ctx->imageTop + ctx->imageHeight) {
+		y = ctx->imageTop + ctx->imageHeight;
+	}
+
+	return y;
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	RECT rc;
 	ApplicationContext *ctx;
+	INT x, y;
 
 	ctx = (ApplicationContext*)GetWindowLong(hWnd, GWL_USERDATA);
 	if (ctx == NULL) {
@@ -402,12 +427,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	// Store the mouse down coordinate when the left mouse button
 	// is pressed in order to draw the selection rectangle
 	case WM_LBUTTONDOWN:
-		ctx->x = LOWORD(lParam);
-		ctx->y = HIWORD(lParam);
+		ctx->x = GetX(ctx, LOWORD(lParam));
+		ctx->y = GetY(ctx, HIWORD(lParam));
 		break;
 	// Check if the mouse has moved. If not, hide the selection rectangle.
 	case WM_LBUTTONUP:
-		if (ctx->x == LOWORD(lParam) && ctx->y == HIWORD(lParam)) {
+		x = GetX(ctx, LOWORD(lParam));
+		y = GetY(ctx, HIWORD(lParam));
+		if (ctx->x == x && ctx->y == y) {
 			ctx->rectWidth = -1;
 			ctx->rectHeight = -1;
 			ctx->rectTop = -1;
@@ -420,7 +447,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	case WM_MOUSEMOVE:
 		// If the left button is pressed
 		if ((wParam & MK_LBUTTON) > 0) {
-			MouseMove(hWnd, ctx, LOWORD(lParam), HIWORD(lParam));
+			x = GetX(ctx, LOWORD(lParam));
+			y = GetY(ctx, HIWORD(lParam));
+			MouseMove(hWnd, ctx, x, y);
 		}
 		return 0;
 	// Check for an escape
