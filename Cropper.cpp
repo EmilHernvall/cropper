@@ -428,6 +428,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 	switch (message)
 	{
+	// Resize the selection even when the maximize or restore buttons are
+	// used.
+	case WM_SYSCOMMAND:
+		switch (wParam) {
+		case SC_RESTORE:
+		case SC_MAXIMIZE:
+		case 0xF012:
+		case 0xF122:
+			ctx->oldLeft = ctx->imageLeft;
+			ctx->oldTop = ctx->imageTop;
+			ctx->oldWidth = ctx->imageWidth;
+			ctx->oldHeight = ctx->imageHeight;
+			break;
+		}
+		return DefWindowProc(hWnd, message, wParam, lParam);
 	// When the window has been resized, we have to rescale the 
 	// image, and redraw the entire client area
 	case WM_SIZE:
