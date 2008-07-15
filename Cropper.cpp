@@ -68,8 +68,6 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 		ofn.lpstrTitle = TEXT("Open");
 
 		if (GetOpenFileName(&ofn) == FALSE) {
-			MessageBox(NULL, TEXT("Failed to open image!"), TEXT("Epic Fail!"),
-					   MB_ICONEXCLAMATION | MB_OK);
 			return 0;
 		}
 	}
@@ -129,6 +127,8 @@ VOID Save(HWND hWnd, ApplicationContext *ctx)
 	INT realTop, realLeft, realWidth, realHeight;
 	TCHAR szBuffer[2*MAX_PATH+1];
 	CLSID encoderClsid;
+	EncoderParameters encoderParameters;
+	ULONG quality;
 
 	// Don't allow the user to save the image unless there's an selected area
 	if (ctx->rectLeft == -1) {
@@ -190,7 +190,16 @@ VOID Save(HWND hWnd, ApplicationContext *ctx)
 		Bitmap bmp(realWidth, realHeight);
 		Graphics g(&bmp);
 		g.DrawImage(ctx->img, Rect(0, 0, realWidth, realHeight), realLeft, realTop, realWidth, realHeight, UnitPixel);
-		Status stat = bmp.Save(szBuffer, &encoderClsid, NULL);
+
+		quality = 90;
+
+		encoderParameters.Count = 1;
+		encoderParameters.Parameter[0].Guid = EncoderQuality;
+		encoderParameters.Parameter[0].Type = EncoderParameterValueTypeLong;
+		encoderParameters.Parameter[0].NumberOfValues = 1;
+		encoderParameters.Parameter[0].Value = &quality;
+
+		Status stat = bmp.Save(szBuffer, &encoderClsid, &encoderParameters);
 
 		// Quit if successful
 		if (stat == Ok) {
