@@ -48,7 +48,8 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	// Check if a filename was providing as a command line argument,
 	// and open that file if that's the case.
 	if (_tcslen(lpCmdLine) > 0) {
-		_tcsncpy_s(szFile, sizeof(szFile)/sizeof(*szFile), lpCmdLine+1, _tcslen(lpCmdLine)-2);
+		_tcsncpy_s(szFile, sizeof(szFile)/sizeof(*szFile), 
+			lpCmdLine+1, _tcslen(lpCmdLine)-2);
 	} 
 	// Show load dialogue
 	else {
@@ -169,12 +170,13 @@ VOID Save(HWND hWnd, ApplicationContext *ctx)
 
 		// Retrieve the chosen filename, and check extension. Find the correct
 		// encoder.
-		_tcsncpy_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), szFile, sizeof(szFile)/sizeof(*szFile));
+		_tcsncpy_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), 
+			szFile, sizeof(szFile)/sizeof(*szFile));
 		LPTSTR szExt = _tcschr(szBuffer, _T('.'));
 		switch (ofn.nFilterIndex) {
 			case 2:
 				if (szExt == NULL) {
-					_tcscat_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer) , TEXT(".png"));
+					_tcscat_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), TEXT(".png"));
 				}
 				GetEncoderClsid(L"image/png", &encoderClsid);
 				break;
@@ -189,7 +191,8 @@ VOID Save(HWND hWnd, ApplicationContext *ctx)
 		// Crop the image.		
 		Bitmap bmp(realWidth, realHeight);
 		Graphics g(&bmp);
-		g.DrawImage(ctx->img, Rect(0, 0, realWidth, realHeight), realLeft, realTop, realWidth, realHeight, UnitPixel);
+		g.DrawImage(ctx->img, Rect(0, 0, realWidth, realHeight), 
+			realLeft, realTop, realWidth, realHeight, UnitPixel);
 
 		quality = 90;
 
@@ -214,7 +217,8 @@ VOID Save(HWND hWnd, ApplicationContext *ctx)
 
 VOID Paint(HWND hWnd, ApplicationContext *ctx)
 {
-	int windowWidth, windowHeight, imageWidth, imageHeight, newWidth, newHeight, top, left;
+	int windowWidth, windowHeight, imageWidth, imageHeight;
+	int newWidth, newHeight, top, left;
 	HDC hdc;
 	PAINTSTRUCT ps;
 	RECT rc;
@@ -322,9 +326,11 @@ VOID Paint(HWND hWnd, ApplicationContext *ctx)
 				widthRatio = ctx->imageWidth / (double)ctx->oldWidth;
 				heightRatio = ctx->imageHeight / (double)ctx->oldHeight;
 
-				ctx->rectLeft = ctx->imageLeft + (int)((ctx->rectLeft - ctx->oldLeft) * widthRatio);
+				ctx->rectLeft = ctx->imageLeft + 
+					(int)((ctx->rectLeft - ctx->oldLeft) * widthRatio);
 				ctx->rectWidth = (int)(ctx->rectWidth * widthRatio);
-				ctx->rectTop = ctx->imageTop + (int)((ctx->rectTop - ctx->oldTop) * heightRatio);
+				ctx->rectTop = ctx->imageTop + 
+					(int)((ctx->rectTop - ctx->oldTop) * heightRatio);
 				ctx->rectHeight = (int)(ctx->rectHeight * heightRatio);
 
 				ctx->oldWidth = -1;
