@@ -4,8 +4,10 @@
 // Helper function from another file
 INT GetEncoderClsid(const WCHAR* format, CLSID* pClsid);
 
-// Forward declaration for WndProc
-LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+// Forward declarations
+LRESULT CALLBACK CropProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK ToolProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK NumOnlyEditProc(HWND, UINT, WPARAM, LPARAM);
 
 int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                        LPTSTR lpCmdLine, int nCmdShow)
@@ -14,7 +16,6 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	WNDCLASSEX wcex;
 	GdiplusStartupInput gdiplusStartupInput;
 	ULONG_PTR gdiplusToken;
-	HWND hWnd;
 	Image *img;
 	OPENFILENAME ofn;
 	TCHAR szFile[MAX_PATH*2+1];
@@ -25,10 +26,10 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	// Initialize GDI+
 	GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
 
-	// Register window class
+	// Window class for main crop window
 	wcex.cbSize = sizeof(WNDCLASSEX);
 	wcex.style = 0; //CS_HREDRAW | CS_VREDRAW;
-	wcex.lpfnWndProc = WndProc;
+	wcex.lpfnWndProc = CropProc;
 	wcex.cbClsExtra = 0;
 	wcex.cbWndExtra = 0;
 	wcex.hInstance = hInstance;
@@ -36,10 +37,20 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
 	wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW+1);
 	wcex.lpszMenuName = NULL;
-	wcex.lpszClassName = WNDCLASS;
+	wcex.lpszClassName = CROPWNDCLASS;
 	wcex.hIconSm = NULL;
 
-	if(!RegisterClassEx(&wcex)) {
+	if (!RegisterClassEx(&wcex)) {
+		MessageBox(0, TEXT("Could Not Register Window"), TEXT("Oh Oh..."),
+		           MB_ICONEXCLAMATION | MB_OK);
+		return 0;
+	}
+
+	// Window class for the tool window
+	wcex.lpfnWndProc = ToolProc;
+	wcex.lpszClassName = TOOLWNDCLASS;
+	wcex.hbrBackground = (HBRUSH)COLOR_WINDOW;
+	if (!RegisterClassEx(&wcex)) {
 		MessageBox(0, TEXT("Could Not Register Window"), TEXT("Oh Oh..."),
 		           MB_ICONEXCLAMATION | MB_OK);
 		return 0;
@@ -94,21 +105,42 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	ctx.oldHeight = -1;
 	ctx.x = -1;
 	ctx.y = -1;
+	ctx.selectionMode = VARIABLE;
 
 	// Create main window
-	hWnd = CreateWindow(WNDCLASS, TITLE, WS_OVERLAPPEDWINDOW,
+	ctx.hwndCropFrame = CreateWindow(CROPWNDCLASS, TITLE, WS_OVERLAPPEDWINDOW,
 						CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, 
 						hInstance, NULL);
-	if (!hWnd) {
+	if (!ctx.hwndCropFrame) {
 		return 0;
 	}
 
 	// Store application context
-	SetWindowLong(hWnd, GWL_USERDATA, (LONG)&ctx);
+	SetWindowLong(ctx.hwndCropFrame, GWL_USERDATA, (LONG)&ctx);
 
 	// Display window
-	ShowWindow(hWnd, nCmdShow);
-	UpdateWindow(hWnd);
+	ShowWindow(ctx.hwndCropFrame, nCmdShow);
+	UpdateWindow(ctx.hwndCropFrame);
+
+	// Create tool frame
+	ctx.hwndToolFrame = CreateWindow(TOOLWNDCLASS, TEXT("Tools"), 0,
+						CW_USEDEFAULT, 0, 150, 270, ctx.hwndCropFrame, NULL, 
+						hInstance, NULL);
+	if (!ctx.hwndToolFrame) {
+		return 0;
+	}
+
+	// Store application context
+	SetWindowLong(ctx.hwndToolFrame, GWL_USERDATA, (LONG)&ctx);
+
+	// Send a second message to indicate that the application 
+	// context has been set and that it's clear to create the
+	// sub windows.
+	SendMessage(ctx.hwndToolFrame, WM_USER, 0, 0);
+
+	// Show toolframe
+	ShowWindow(ctx.hwndToolFrame, nCmdShow);
+	UpdateWindow(ctx.hwndToolFrame);
 
 	// Main loop
 	while(GetMessage(&msg, NULL, 0, 0) > 0) {
@@ -347,6 +379,28 @@ VOID Paint(HWND hWnd, ApplicationContext *ctx)
 	}
 }
 
+INT GetX(ApplicationContext *ctx, INT x)
+{
+	if (x < ctx->imageLeft) {
+		x = ctx->imageLeft;
+	} else if (x > ctx->imageLeft + ctx->imageWidth) {
+		x = ctx->imageLeft + ctx->imageWidth;
+	}
+
+	return x;
+}
+
+INT GetY(ApplicationContext *ctx, INT y)
+{
+	if (y < ctx->imageTop) {
+		y = ctx->imageTop;
+	} else if (y >= ctx->imageTop + ctx->imageHeight) {
+		y = ctx->imageTop + ctx->imageHeight - 1;
+	}
+
+	return y;
+}
+
 VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 {
 	int newWidth, newHeight, top, left, right, bottom;
@@ -359,12 +413,71 @@ VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 	}
 
 	// Calculate the selection rectangle
-	left = (ctx->x < x ? ctx->x : x);
-	top = (ctx->y < y ? ctx->y : y);
-	right = (ctx->x < x ? x : ctx->x);
-	bottom = (ctx->y < y ? y : ctx->y);
-	newWidth = (ctx->x < x ? x - ctx->x : ctx->x - x);
-	newHeight = (ctx->y < y ? y - ctx->y : ctx->y - y);
+	switch (ctx->selectionMode)
+	{
+	case FIXED_SIZE:
+		right = GetX(ctx, x + ctx->modeWidth);
+		bottom = GetY(ctx, y + ctx->modeHeight);
+		left = right - ctx->modeWidth;
+		top = bottom - ctx->modeHeight;
+		newWidth = ctx->modeWidth;
+		newHeight = ctx->modeHeight;
+		break;
+	case FIXED_RATIO:
+		newWidth = abs(x - ctx->x);
+		newHeight = abs(y - ctx->y);
+
+		if (newWidth/(double)newHeight > ctx->modeWidth/(double)ctx->modeHeight) {
+			newWidth = (ctx->x < x ? x - ctx->x : ctx->x - x);
+			newHeight = (int)(ctx->modeHeight/(double)ctx->modeWidth * newWidth);
+		} else {
+			newHeight = (ctx->y < y ? y - ctx->y : ctx->y - y);
+			newWidth = (int)(ctx->modeWidth/(double)ctx->modeHeight * newHeight);
+		}
+
+		if (x < ctx->x) {
+			left = ctx->x - newWidth;
+			right = ctx->x;
+		} else {
+			left = ctx->x;
+			right = left + newWidth;
+		}
+
+		if (y < ctx->y) {
+			top = ctx->y - newHeight;
+			bottom = ctx->y;
+		} else {
+			top = ctx->y;
+			bottom = top + newHeight;
+		}
+		
+		break;
+	case VARIABLE:
+	default:
+		left = (ctx->x < x ? ctx->x : x);
+		top = (ctx->y < y ? ctx->y : y);
+		right = (ctx->x < x ? x : ctx->x);
+		bottom = (ctx->y < y ? y : ctx->y);
+		newWidth = (ctx->x < x ? x - ctx->x : ctx->x - x);
+		newHeight = (ctx->y < y ? y - ctx->y : ctx->y - y);
+		break;
+	}
+
+	if (left <= ctx->imageLeft) {
+		return;
+	}
+
+	if (top <= ctx->imageTop) {
+		return;
+	}
+
+	if (right >= ctx->imageLeft + ctx->imageWidth) {
+		return;
+	}
+
+	if (bottom >= ctx->imageTop + ctx->imageHeight) {
+		return;
+	}
 
 	// Store for later use
 	ctx->rectLeft = left;
@@ -408,29 +521,7 @@ VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 	EndPaint(hWnd, &ps);
 }
 
-INT GetX(ApplicationContext *ctx, INT x)
-{
-	if (x < ctx->imageLeft) {
-		x = ctx->imageLeft;
-	} else if (x > ctx->imageLeft + ctx->imageWidth) {
-		x = ctx->imageLeft + ctx->imageWidth;
-	}
-
-	return x;
-}
-
-INT GetY(ApplicationContext *ctx, INT y)
-{
-	if (y < ctx->imageTop) {
-		y = ctx->imageTop;
-	} else if (y >= ctx->imageTop + ctx->imageHeight) {
-		y = ctx->imageTop + ctx->imageHeight - 1;
-	}
-
-	return y;
-}
-
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK CropProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	RECT rc;
 	ApplicationContext *ctx;
@@ -524,4 +615,163 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	}
 
 	return 0;
+}
+
+LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	INT wmId, wmEvent, value;
+	ApplicationContext *ctx;
+	TCHAR szSizeBuffer[10];
+
+	ctx = (ApplicationContext*)GetWindowLong(hWnd, GWL_USERDATA);
+	if (ctx == NULL) {
+		return DefWindowProc(hWnd, message, wParam, lParam);
+	}
+
+	switch (message)
+	{
+	case WM_USER:
+		
+		ctx->hwndLblSelectionMode = CreateWindow(L"STATIC", L"Selection mode:",
+							WS_VISIBLE | WS_CHILD,
+							10, 10, 130, 20, hWnd, NULL, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		ctx->hwndBtnVariable = CreateWindow(L"BUTTON", L"Variable size",
+							WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTORADIOBUTTON,
+							10, 30, 130, 20, hWnd, (HMENU)ID_BTN_VARIABLE, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		ctx->hwndBtnFixed = CreateWindow(L"BUTTON", L"Fixed size",
+							WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTORADIOBUTTON,
+							10, 50, 130, 20, hWnd, (HMENU)ID_BTN_FIXED, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		ctx->hwndBtnFixedRatio = CreateWindow(L"BUTTON", L"Fixed ratio",
+							WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTORADIOBUTTON,
+							10, 70, 130, 20, hWnd, (HMENU)ID_BTN_FIXED_RATIO, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		SendMessage(ctx->hwndBtnVariable, BM_SETCHECK, BST_CHECKED, 0);
+
+		ctx->hwndLblWidth = CreateWindow(L"STATIC", L"Width:",
+							WS_VISIBLE | WS_CHILD,
+							10, 100, 130, 20, hWnd, NULL, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		ctx->hwndEditWidth = CreateWindow(L"EDIT", NULL,
+							WS_TABSTOP | WS_VISIBLE | WS_CHILD | WS_BORDER,
+							10, 120, 125, 20, hWnd, (HMENU)ID_EDIT_WIDTH, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		ctx->wndProcWidth = (WNDPROC)SetWindowLong(ctx->hwndEditWidth, GWL_WNDPROC, (LONG)NumOnlyEditProc);
+		SetWindowLong(ctx->hwndEditWidth, GWL_USERDATA, (LONG)ctx);
+		EnableWindow(ctx->hwndEditWidth, FALSE);
+		SendMessage(ctx->hwndEditWidth, EM_LIMITTEXT, 6, 0);
+
+		ctx->hwndLblHeight = CreateWindow(L"STATIC", L"Height:",
+							WS_VISIBLE | WS_CHILD,
+							10, 145, 130, 20, hWnd, NULL, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		ctx->hwndEditHeight = CreateWindow(L"EDIT", NULL,
+							WS_TABSTOP | WS_VISIBLE | WS_CHILD | WS_BORDER,
+							10, 165, 125, 20, hWnd, (HMENU)ID_EDIT_HEIGHT, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		ctx->wndProcHeight = (WNDPROC)SetWindowLong(ctx->hwndEditHeight, GWL_WNDPROC, (LONG)NumOnlyEditProc);
+		SetWindowLong(ctx->hwndEditHeight, GWL_USERDATA, (LONG)ctx);
+		EnableWindow(ctx->hwndEditHeight, FALSE);
+		SendMessage(ctx->hwndEditHeight, EM_LIMITTEXT, 6, 0);
+
+		ctx->hwndBtnSave = CreateWindow(L"BUTTON", L"Save",
+							WS_TABSTOP | WS_VISIBLE | WS_CHILD,
+							10, 200, 125, 30, hWnd, (HMENU)ID_BTN_SAVE, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		break;
+	case WM_COMMAND:
+		wmId = LOWORD(wParam);
+		wmEvent = HIWORD(wParam);
+		switch (wmId) {
+		case ID_BTN_VARIABLE:
+			EnableWindow(ctx->hwndEditWidth, FALSE);
+			EnableWindow(ctx->hwndEditHeight, FALSE);
+			ctx->selectionMode = VARIABLE;
+			return 0;
+		case ID_BTN_FIXED:
+			EnableWindow(ctx->hwndEditWidth, TRUE);
+			EnableWindow(ctx->hwndEditHeight, TRUE);
+			ctx->selectionMode = FIXED_SIZE;
+			return 0;
+		case ID_BTN_FIXED_RATIO:
+			EnableWindow(ctx->hwndEditWidth, TRUE);
+			ctx->selectionMode = FIXED_RATIO;
+			EnableWindow(ctx->hwndEditHeight, TRUE);
+			return 0;
+		case ID_EDIT_WIDTH:
+			switch (wmEvent)
+			{
+			case EN_CHANGE:
+				SendMessage(ctx->hwndEditWidth, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
+				value = _wtoi(szSizeBuffer);
+				if (value < ctx->imageWidth) {
+					ctx->modeWidth = value;
+				} else {
+					wsprintf(szSizeBuffer, L"%d", ctx->imageWidth - 1);
+					SendMessage(ctx->hwndEditWidth, WM_SETTEXT, 0, (LPARAM)szSizeBuffer);
+				}
+				break;
+			}
+			return 0;
+		case ID_EDIT_HEIGHT:
+			switch (wmEvent)
+			{
+			case EN_CHANGE:
+				SendMessage(ctx->hwndEditHeight, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
+				value = _wtoi(szSizeBuffer);
+				if (value < ctx->imageHeight) {
+					ctx->modeHeight = value;
+				} else {
+					wsprintf(szSizeBuffer, L"%d", ctx->imageHeight - 1);
+					SendMessage(ctx->hwndEditHeight, WM_SETTEXT, 0, (LPARAM)szSizeBuffer);
+				}
+				break;
+			}
+			return 0;
+		case ID_BTN_SAVE:
+			Save(ctx->hwndCropFrame, ctx);
+			return 0;
+		}
+		break;
+	default:
+	return DefWindowProc(hWnd, message, wParam, lParam);
+	}
+
+	return 0;
+}
+
+LRESULT CALLBACK NumOnlyEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	ApplicationContext *ctx = (ApplicationContext*)GetWindowLong(hWnd, GWL_USERDATA);
+
+	switch (msg)
+	{
+	case WM_CHAR:
+		if (wParam == 9) {
+			if (ctx->hwndEditWidth == hWnd) {
+				SetFocus(ctx->hwndEditHeight);
+			}
+		}
+
+		if (!iswdigit(wParam) && wParam != 8) {
+			return 0;
+		}
+	}
+
+	if (ctx->hwndEditWidth == hWnd) {
+		return CallWindowProc(ctx->wndProcWidth, hWnd, msg, wParam, lParam);
+	} else {
+		return CallWindowProc(ctx->wndProcHeight, hWnd, msg, wParam, lParam);
+	}
 }
