@@ -70,7 +70,12 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
 		ofn.lStructSize = sizeof(OPENFILENAME);
 		ofn.hwndOwner = NULL;
-		ofn.lpstrFilter = TEXT("JPEG\0*.jpg\0PNG\0*.png\0");
+		ofn.lpstrFilter = L"All Known Filetypes (JPEG,PNG,BMP,GIF,TIFF)\0*.jpg;*.png;*.bmp;*.gif;*.tiff\0"
+			L"JPEG\0*.jpg\0"
+			L"PNG\0*.png\0"
+			L"BMP\0*.bmp\0"
+			L"GIF\0*.gif\0"
+			L"TIFF\0*.tiff\0";
 		ofn.lpstrFile = szFile;
 		ofn.nMaxFile = sizeof(szFile) / sizeof(*szFile);
 		ofn.lpstrFileTitle = NULL;
@@ -177,7 +182,11 @@ VOID Save(HWND hWnd, ApplicationContext *ctx)
 
 	ofn.lStructSize = sizeof(OPENFILENAME);
 	ofn.hwndOwner = hWnd;
-	ofn.lpstrFilter = TEXT("JPEG\0*.jpg\0PNG\0*.png\0");
+	ofn.lpstrFilter = L"JPEG\0*.jpg\0"
+		L"PNG\0*.png\0"
+		L"BMP\0*.bmp\0"
+		L"TIFF\0*.tiff\0";
+
 	ofn.lpstrFile = szFile;
 	ofn.nMaxFile = sizeof(szFile) / sizeof(*szFile);
 	ofn.lpstrFileTitle = NULL;
@@ -206,6 +215,18 @@ VOID Save(HWND hWnd, ApplicationContext *ctx)
 			szFile, sizeof(szFile)/sizeof(*szFile));
 		LPTSTR szExt = _tcschr(szBuffer, _T('.'));
 		switch (ofn.nFilterIndex) {
+			case 4:
+				if (szExt == NULL) {
+					_tcscat_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), TEXT(".tiff"));
+				}
+				GetEncoderClsid(L"image/tiff", &encoderClsid);
+				break;
+			case 3:
+				if (szExt == NULL) {
+					_tcscat_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), TEXT(".bmp"));
+				}
+				GetEncoderClsid(L"image/bmp", &encoderClsid);
+				break;
 			case 2:
 				if (szExt == NULL) {
 					_tcscat_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), TEXT(".png"));
