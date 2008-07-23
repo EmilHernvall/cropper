@@ -111,6 +111,7 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	ctx.x = -1;
 	ctx.y = -1;
 	ctx.selectionMode = VARIABLE;
+	ctx.resizeOutput = FALSE;
 
 	// Create main window
 	ctx.hwndCropFrame = CreateWindow(CROPWNDCLASS, TITLE, WS_OVERLAPPEDWINDOW,
@@ -129,7 +130,7 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
 	// Create tool frame
 	ctx.hwndToolFrame = CreateWindow(TOOLWNDCLASS, TEXT("Tools"), 0,
-						CW_USEDEFAULT, 0, 150, 270, ctx.hwndCropFrame, NULL, 
+						CW_USEDEFAULT, 0, 150, 500, ctx.hwndCropFrame, NULL, 
 						hInstance, NULL);
 	if (!ctx.hwndToolFrame) {
 		return 0;
@@ -163,10 +164,12 @@ VOID Save(HWND hWnd, ApplicationContext *ctx)
 	INT imageWidth, imageHeight;
 	DOUBLE widthRatio, heightRatio;
 	INT realTop, realLeft, realWidth, realHeight;
-	TCHAR szBuffer[2*MAX_PATH+1];
+	INT outputWidth, outputHeight;
+	TCHAR szBuffer[2*MAX_PATH+1], szSizeBuffer[10];
 	CLSID encoderClsid;
 	EncoderParameters encoderParameters;
 	ULONG quality;
+	LPWSTR szExt, szMime;
 
 	// Don't allow the user to save the image unless there's an selected area
 	if (ctx->rectLeft == -1) {
@@ -209,42 +212,62 @@ VOID Save(HWND hWnd, ApplicationContext *ctx)
 		realWidth = (int)(widthRatio * ctx->rectWidth);
 		realHeight = (int)(heightRatio * ctx->rectHeight);
 
+		if (ctx->resizeOutput) {
+			SendMessage(ctx->hwndEditOutputWidth, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
+			outputWidth = _wtoi(szSizeBuffer);
+
+			if (outputWidth <= 0) {
+				outputWidth = realWidth;
+			}
+
+			SendMessage(ctx->hwndEditOutputHeight, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
+			outputHeight = _wtoi(szSizeBuffer);
+
+			if (outputHeight <= 0) {
+				outputHeight = realHeight;
+			}
+		} else {
+			outputWidth = realWidth;
+			outputHeight = realHeight;
+		}
+
 		// Retrieve the chosen filename, and check extension. Find the correct
 		// encoder.
 		_tcsncpy_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), 
 			szFile, sizeof(szFile)/sizeof(*szFile));
-		LPTSTR szExt = _tcschr(szBuffer, _T('.'));
 		switch (ofn.nFilterIndex) {
 			case 4:
-				if (szExt == NULL) {
-					_tcscat_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), TEXT(".tiff"));
-				}
-				GetEncoderClsid(L"image/tiff", &encoderClsid);
+				szExt = L".tiff";
+				szMime = L"image/tiff";
 				break;
 			case 3:
-				if (szExt == NULL) {
-					_tcscat_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), TEXT(".bmp"));
-				}
-				GetEncoderClsid(L"image/bmp", &encoderClsid);
+				szExt = L".bmp";
+				szMime = L"image/bmp";
 				break;
 			case 2:
-				if (szExt == NULL) {
-					_tcscat_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), TEXT(".png"));
-				}
-				GetEncoderClsid(L"image/png", &encoderClsid);
+				szExt = L".png";
+				szMime = L"image/png";
 				break;
 			case 1:
 			default:
-				if (szExt == NULL) {
-					_tcscat_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), TEXT(".jpg"));
-				}
-				GetEncoderClsid(L"image/jpeg", &encoderClsid);
+				szExt = L".jpg";
+				szMime = L"image/jpeg";
+		}
+
+		if (GetEncoderClsid(szMime, &encoderClsid) == -1) {
+			MessageBox(ctx->hwndCropFrame, L"Windows does not support this file type.", L"Error.", MB_ICONEXCLAMATION);
+			return;
+		}
+
+		LPTSTR szFindExt = _tcschr(szBuffer, _T('.'));
+		if (szFindExt == NULL) {
+			_tcscat_s(szBuffer, sizeof(szBuffer)/sizeof(*szBuffer), szExt);
 		}
 
 		// Crop the image.		
-		Bitmap bmp(realWidth, realHeight);
+		Bitmap bmp(outputWidth, outputHeight);
 		Graphics g(&bmp);
-		g.DrawImage(ctx->img, Rect(0, 0, realWidth, realHeight), 
+		g.DrawImage(ctx->img, Rect(0, 0, outputWidth, outputHeight), 
 			realLeft, realTop, realWidth, realHeight, UnitPixel);
 
 		quality = 90;
@@ -422,6 +445,40 @@ INT GetY(ApplicationContext *ctx, INT y)
 	return y;
 }
 
+VOID UpdateResizeEdits(ApplicationContext *ctx)
+{
+	WCHAR szSizeBuffer[10];
+	INT width, height;
+
+	if (ctx->rectWidth == -1) {
+		width = ctx->img->GetWidth();
+	} else {
+		if (ctx->selectionMode == FIXED_SIZE) {
+			SendMessage(ctx->hwndEditWidth, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
+			width = _wtoi(szSizeBuffer);
+		} else {
+			width = (int)(ctx->img->GetWidth() / (double)ctx->imageWidth * ctx->rectWidth);
+		}
+	}
+
+	if (ctx->rectHeight == -1) {
+		height = ctx->img->GetHeight();
+	} else {
+		if (ctx->selectionMode == FIXED_SIZE) {
+			SendMessage(ctx->hwndEditHeight, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
+			height = _wtoi(szSizeBuffer);
+		} else {
+			height = (int)(ctx->img->GetHeight() / (double)ctx->imageHeight * ctx->rectHeight);
+		}
+	}
+
+	wsprintf(szSizeBuffer, L"%d", width);
+	SendMessage(ctx->hwndEditOutputWidth, WM_SETTEXT, 0, (LPARAM)szSizeBuffer);
+
+	wsprintf(szSizeBuffer, L"%d", height);
+	SendMessage(ctx->hwndEditOutputHeight, WM_SETTEXT, 0, (LPARAM)szSizeBuffer);
+}
+
 VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 {
 	int newWidth, newHeight, top, left, right, bottom;
@@ -540,6 +597,8 @@ VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 		RectF((Gdiplus::REAL)left, (Gdiplus::REAL)top, 
 		      (Gdiplus::REAL)newWidth, (Gdiplus::REAL)newHeight));
 	EndPaint(hWnd, &ps);
+
+	UpdateResizeEdits(ctx);
 }
 
 LRESULT CALLBACK CropProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -610,6 +669,8 @@ LRESULT CALLBACK CropProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			ctx->rectLeft = -1;
 			GetClientRect(hWnd, &rc);
 			InvalidateRect(hWnd, &rc, TRUE);
+			
+			UpdateResizeEdits(ctx);
 		}
 		break;
 	// Update the selection rectangle
@@ -685,10 +746,10 @@ LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 							10, 120, 125, 20, hWnd, (HMENU)ID_EDIT_WIDTH, 
 							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
 
-		ctx->wndProcWidth = (WNDPROC)SetWindowLong(ctx->hwndEditWidth, GWL_WNDPROC, (LONG)NumOnlyEditProc);
+		ctx->editProc = (WNDPROC)SetWindowLong(ctx->hwndEditWidth, GWL_WNDPROC, (LONG)NumOnlyEditProc);
 		SetWindowLong(ctx->hwndEditWidth, GWL_USERDATA, (LONG)ctx);
 		EnableWindow(ctx->hwndEditWidth, FALSE);
-		SendMessage(ctx->hwndEditWidth, EM_LIMITTEXT, 6, 0);
+		SendMessage(ctx->hwndEditWidth, EM_LIMITTEXT, 5, 0);
 
 		ctx->hwndLblHeight = CreateWindow(L"STATIC", L"Height:",
 							WS_VISIBLE | WS_CHILD,
@@ -700,14 +761,49 @@ LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 							10, 165, 125, 20, hWnd, (HMENU)ID_EDIT_HEIGHT, 
 							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
 
-		ctx->wndProcHeight = (WNDPROC)SetWindowLong(ctx->hwndEditHeight, GWL_WNDPROC, (LONG)NumOnlyEditProc);
+		SetWindowLong(ctx->hwndEditHeight, GWL_WNDPROC, (LONG)NumOnlyEditProc);
 		SetWindowLong(ctx->hwndEditHeight, GWL_USERDATA, (LONG)ctx);
 		EnableWindow(ctx->hwndEditHeight, FALSE);
-		SendMessage(ctx->hwndEditHeight, EM_LIMITTEXT, 6, 0);
+		SendMessage(ctx->hwndEditHeight, EM_LIMITTEXT, 5, 0);
+
+		ctx->hwndBtnResizeOutput = CreateWindow(L"BUTTON", L"Resize output:",
+							WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,
+							10, 200, 130, 20, hWnd, (HMENU)ID_BTN_RESIZE, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		ctx->hwndLblOutputWidth = CreateWindow(L"STATIC", L"Width:",
+							WS_VISIBLE | WS_CHILD,
+							10, 220, 130, 20, hWnd, NULL, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		ctx->hwndEditOutputWidth = CreateWindow(L"EDIT", NULL,
+							WS_TABSTOP | WS_VISIBLE | WS_CHILD | WS_BORDER,
+							10, 240, 125, 20, hWnd, (HMENU)ID_EDIT_OUTPUTWIDTH, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		SetWindowLong(ctx->hwndEditOutputWidth, GWL_WNDPROC, (LONG)NumOnlyEditProc);
+		SetWindowLong(ctx->hwndEditOutputWidth, GWL_USERDATA, (LONG)ctx);
+		EnableWindow(ctx->hwndEditOutputWidth, FALSE);
+		SendMessage(ctx->hwndEditOutputWidth, EM_LIMITTEXT, 5, 0);
+
+		ctx->hwndLblOutputHeight = CreateWindow(L"STATIC", L"Height:",
+							WS_VISIBLE | WS_CHILD,
+							10, 265, 130, 20, hWnd, NULL, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		ctx->hwndEditOutputHeight = CreateWindow(L"EDIT", NULL,
+							WS_TABSTOP | WS_VISIBLE | WS_CHILD | WS_BORDER,
+							10, 285, 125, 20, hWnd, (HMENU)ID_EDIT_OUTPUTHEIGHT, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		SetWindowLong(ctx->hwndEditOutputHeight, GWL_WNDPROC, (LONG)NumOnlyEditProc);
+		SetWindowLong(ctx->hwndEditOutputHeight, GWL_USERDATA, (LONG)ctx);
+		EnableWindow(ctx->hwndEditOutputHeight, FALSE);
+		SendMessage(ctx->hwndEditOutputHeight, EM_LIMITTEXT, 5, 0);
 
 		ctx->hwndBtnSave = CreateWindow(L"BUTTON", L"Save",
 							WS_TABSTOP | WS_VISIBLE | WS_CHILD,
-							10, 200, 125, 30, hWnd, (HMENU)ID_BTN_SAVE, 
+							10, 320, 125, 30, hWnd, (HMENU)ID_BTN_SAVE, 
 							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
 
 		break;
@@ -715,49 +811,73 @@ LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		wmId = LOWORD(wParam);
 		wmEvent = HIWORD(wParam);
 		switch (wmId) {
+		case ID_BTN_RESIZE:
+			if (wmEvent == BN_CLICKED) {
+				value = SendMessage(ctx->hwndBtnResizeOutput, BM_GETCHECK, 0, 0);
+				if (value == BST_CHECKED) {
+					ctx->resizeOutput = TRUE;
+
+					UpdateResizeEdits(ctx);
+
+					EnableWindow(ctx->hwndEditOutputWidth, TRUE);
+					EnableWindow(ctx->hwndEditOutputHeight, TRUE);
+				} else {
+					ctx->resizeOutput = FALSE;
+
+					EnableWindow(ctx->hwndEditOutputWidth, FALSE);
+					EnableWindow(ctx->hwndEditOutputHeight, FALSE);
+				}
+			}
+			return 0;
 		case ID_BTN_VARIABLE:
 			EnableWindow(ctx->hwndEditWidth, FALSE);
 			EnableWindow(ctx->hwndEditHeight, FALSE);
 			ctx->selectionMode = VARIABLE;
 			return 0;
 		case ID_BTN_FIXED:
+			ctx->selectionMode = FIXED_SIZE;
 			EnableWindow(ctx->hwndEditWidth, TRUE);
 			EnableWindow(ctx->hwndEditHeight, TRUE);
-			ctx->selectionMode = FIXED_SIZE;
+			SendMessage(hWnd, WM_COMMAND, (ID_EDIT_WIDTH & 0xFFFF) | ((EN_CHANGE & 0xFFFF) << 16), 0);
+			SendMessage(hWnd, WM_COMMAND, (ID_EDIT_HEIGHT & 0xFFFF) | ((EN_CHANGE & 0xFFFF) << 16), 0);
 			return 0;
 		case ID_BTN_FIXED_RATIO:
-			EnableWindow(ctx->hwndEditWidth, TRUE);
 			ctx->selectionMode = FIXED_RATIO;
+			EnableWindow(ctx->hwndEditWidth, TRUE);
 			EnableWindow(ctx->hwndEditHeight, TRUE);
+			SendMessage(hWnd, WM_COMMAND, (ID_EDIT_WIDTH & 0xFFFF) | ((EN_CHANGE & 0xFFFF) << 16), 0);
+			SendMessage(hWnd, WM_COMMAND, (ID_EDIT_HEIGHT & 0xFFFF) | ((EN_CHANGE & 0xFFFF) << 16), 0);
 			return 0;
 		case ID_EDIT_WIDTH:
-			switch (wmEvent)
-			{
-			case EN_CHANGE:
+			if (wmEvent == EN_CHANGE) {
 				SendMessage(ctx->hwndEditWidth, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
 				value = _wtoi(szSizeBuffer);
 				if (value < ctx->imageWidth) {
-					ctx->modeWidth = value;
+					if (ctx->selectionMode == FIXED_SIZE) {
+						ctx->modeWidth = (int)(ctx->imageWidth / (double)ctx->img->GetWidth() * value);
+					} else {
+						ctx->modeWidth = value;
+					}
 				} else {
 					wsprintf(szSizeBuffer, L"%d", ctx->imageWidth - 1);
 					SendMessage(ctx->hwndEditWidth, WM_SETTEXT, 0, (LPARAM)szSizeBuffer);
 				}
-				break;
 			}
 			return 0;
 		case ID_EDIT_HEIGHT:
-			switch (wmEvent)
-			{
-			case EN_CHANGE:
+			if (wmEvent == EN_CHANGE) {
 				SendMessage(ctx->hwndEditHeight, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
 				value = _wtoi(szSizeBuffer);
 				if (value < ctx->imageHeight) {
-					ctx->modeHeight = value;
+					if (ctx->selectionMode == FIXED_SIZE) {
+						ctx->modeHeight = (int)(ctx->imageHeight / (double)ctx->img->GetHeight() * value);
+					} else {
+						ctx->modeHeight = value;
+					}
 				} else {
 					wsprintf(szSizeBuffer, L"%d", ctx->imageHeight - 1);
 					SendMessage(ctx->hwndEditHeight, WM_SETTEXT, 0, (LPARAM)szSizeBuffer);
 				}
-				break;
 			}
 			return 0;
 		case ID_BTN_SAVE:
@@ -766,7 +886,7 @@ LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	default:
-	return DefWindowProc(hWnd, message, wParam, lParam);
+		return DefWindowProc(hWnd, message, wParam, lParam);
 	}
 
 	return 0;
@@ -779,20 +899,11 @@ LRESULT CALLBACK NumOnlyEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
 	switch (msg)
 	{
 	case WM_CHAR:
-		if (wParam == 9) {
-			if (ctx->hwndEditWidth == hWnd) {
-				SetFocus(ctx->hwndEditHeight);
-			}
-		}
-
+		// Only allow digits and backspace (ASCII 8)
 		if (!iswdigit(wParam) && wParam != 8) {
 			return 0;
 		}
 	}
 
-	if (ctx->hwndEditWidth == hWnd) {
-		return CallWindowProc(ctx->wndProcWidth, hWnd, msg, wParam, lParam);
-	} else {
-		return CallWindowProc(ctx->wndProcHeight, hWnd, msg, wParam, lParam);
-	}
+	return CallWindowProc(ctx->editProc, hWnd, msg, wParam, lParam);
 }

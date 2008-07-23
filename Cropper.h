@@ -4,12 +4,16 @@
 #define CROPWNDCLASS TEXT("CropFrame")
 #define TOOLWNDCLASS TEXT("ToolFrame")
 
-#define ID_BTN_VARIABLE		100
-#define ID_BTN_FIXED		101
-#define	ID_BTN_FIXED_RATIO	102
-#define ID_EDIT_WIDTH		103
-#define ID_EDIT_HEIGHT		104
-#define ID_BTN_SAVE			105
+#define ID_BTN_VARIABLE					100
+#define ID_BTN_FIXED					101
+#define	ID_BTN_FIXED_RATIO				102
+#define ID_EDIT_WIDTH					103
+#define ID_EDIT_HEIGHT					104
+#define ID_EDIT_HEIGHT					104
+#define ID_BTN_SAVE						105
+#define ID_BTN_RESIZE					106
+#define ID_EDIT_OUTPUTWIDTH				107
+#define ID_EDIT_OUTPUTHEIGHT			108
 
 enum SelectionMode {
 	VARIABLE = 1,
@@ -24,10 +28,13 @@ typedef struct {
 	HWND hwndBtnVariable, hwndBtnFixed, hwndBtnFixedRatio;
 	HWND hwndLblWidth, hwndLblHeight;
 	HWND hwndEditWidth, hwndEditHeight;
+	HWND hwndBtnResizeOutput;
+	HWND hwndLblOutputWidth, hwndLblOutputHeight;
+	HWND hwndEditOutputWidth, hwndEditOutputHeight;
 	HWND hwndBtnSave;
 
 	// Edit WndProcs
-	WNDPROC wndProcWidth, wndProcHeight;
+	WNDPROC editProc;
 
 	// The loaded image
 	Image *img;
@@ -44,6 +51,8 @@ typedef struct {
 
 	SelectionMode selectionMode;
 	INT modeWidth, modeHeight;
+
+	BOOL resizeOutput;
 
 	// Position of the mouse
 	INT x, y;
