@@ -1,3 +1,23 @@
+/**
+ * Cropper 0.2
+ * @author Emil Hernvall <aderyn@gmail.com>
+ * @webpage http://blog.c0la.se/
+ *
+ * Todo:
+ *
+ * * Features:
+ * * * Add option to maintain aspect ratio when changing resize values.
+ * * * Add link to my blog in the tool window.
+ *
+ * * Bugs:
+ * * * Scale ApplicationContext.modeWidth and ApplicationContext.modeHeight
+       when the window is resized.
+ * * * Get TAB working in the toolwindow.
+ * * * Throw out all worthless macros and make the application pure Unicode
+       to enhance readability.
+ * 
+ */
+
 #include "stdafx.h"
 #include "Cropper.h"
 
