@@ -7,12 +7,10 @@
  *
  * * Features:
  * * * Add option to maintain aspect ratio when changing resize values.
- * * * Add link to my blog in the tool window.
+ * * * Add option to change compression level.
+ * * * Make the link look like a link.
  *
  * * Bugs:
- * * * Scale ApplicationContext.modeWidth and ApplicationContext.modeHeight
-       when the window is resized.
- * * * Get TAB working in the toolwindow.
  * * * Throw out all worthless macros and make the application pure Unicode
        to enhance readability.
  * 
@@ -28,6 +26,7 @@ INT GetEncoderClsid(const WCHAR* format, CLSID* pClsid);
 LRESULT CALLBACK CropProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK ToolProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK NumOnlyEditProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK ButtonProc(HWND, UINT, WPARAM, LPARAM);
 
 int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                        LPTSTR lpCmdLine, int nCmdShow)
@@ -150,7 +149,7 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
 	// Create tool frame
 	ctx.hwndToolFrame = CreateWindow(TOOLWNDCLASS, TEXT("Tools"), 0,
-						CW_USEDEFAULT, 0, 150, 500, ctx.hwndCropFrame, NULL, 
+						CW_USEDEFAULT, 0, 150, 410, ctx.hwndCropFrame, NULL, 
 						hInstance, NULL);
 	if (!ctx.hwndToolFrame) {
 		return 0;
@@ -474,8 +473,7 @@ VOID UpdateResizeEdits(ApplicationContext *ctx)
 		width = ctx->img->GetWidth();
 	} else {
 		if (ctx->selectionMode == FIXED_SIZE) {
-			SendMessage(ctx->hwndEditWidth, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
-			width = _wtoi(szSizeBuffer);
+			width = ctx->modeWidth;
 		} else {
 			width = (int)(ctx->img->GetWidth() / (double)ctx->imageWidth * ctx->rectWidth);
 		}
@@ -485,8 +483,7 @@ VOID UpdateResizeEdits(ApplicationContext *ctx)
 		height = ctx->img->GetHeight();
 	} else {
 		if (ctx->selectionMode == FIXED_SIZE) {
-			SendMessage(ctx->hwndEditHeight, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
-			height = _wtoi(szSizeBuffer);
+			height = ctx->modeHeight;
 		} else {
 			height = (int)(ctx->img->GetHeight() / (double)ctx->imageHeight * ctx->rectHeight);
 		}
@@ -501,7 +498,8 @@ VOID UpdateResizeEdits(ApplicationContext *ctx)
 
 VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 {
-	int newWidth, newHeight, top, left, right, bottom;
+	INT newWidth, newHeight, top, left, right, bottom;
+	INT modeWidth, modeHeight;
 	HDC hdc;
 	PAINTSTRUCT ps;
 	RECT rc, rc2;
@@ -514,12 +512,15 @@ VOID MouseMove(HWND hWnd, ApplicationContext *ctx, int x, int y)
 	switch (ctx->selectionMode)
 	{
 	case FIXED_SIZE:
-		right = GetX(ctx, x + ctx->modeWidth);
-		bottom = GetY(ctx, y + ctx->modeHeight);
-		left = right - ctx->modeWidth;
-		top = bottom - ctx->modeHeight;
-		newWidth = ctx->modeWidth;
-		newHeight = ctx->modeHeight;
+		modeWidth = (int)(ctx->imageWidth / (double)ctx->img->GetWidth() * ctx->modeWidth);
+		modeHeight = (int)(ctx->imageHeight / (double)ctx->img->GetHeight() * ctx->modeHeight);
+
+		right = GetX(ctx, x + modeWidth);
+		bottom = GetY(ctx, y + modeHeight);
+		left = right - modeWidth;
+		top = bottom - modeHeight;
+		newWidth = modeWidth;
+		newHeight = modeHeight;
 		break;
 	case FIXED_RATIO:
 		newWidth = abs(x - ctx->x);
@@ -744,15 +745,24 @@ LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 							10, 30, 130, 20, hWnd, (HMENU)ID_BTN_VARIABLE, 
 							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
 
+		ctx->buttonProc = (WNDPROC)SetWindowLong(ctx->hwndBtnVariable, GWL_WNDPROC, (LONG)ButtonProc);
+		SetWindowLong(ctx->hwndBtnVariable, GWL_USERDATA, (LONG)ctx);
+
 		ctx->hwndBtnFixed = CreateWindow(L"BUTTON", L"Fixed size",
 							WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTORADIOBUTTON,
 							10, 50, 130, 20, hWnd, (HMENU)ID_BTN_FIXED, 
 							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
 
+		SetWindowLong(ctx->hwndBtnFixed, GWL_WNDPROC, (LONG)ButtonProc);
+		SetWindowLong(ctx->hwndBtnFixed, GWL_USERDATA, (LONG)ctx);
+
 		ctx->hwndBtnFixedRatio = CreateWindow(L"BUTTON", L"Fixed ratio",
 							WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTORADIOBUTTON,
 							10, 70, 130, 20, hWnd, (HMENU)ID_BTN_FIXED_RATIO, 
 							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		SetWindowLong(ctx->hwndBtnFixedRatio, GWL_WNDPROC, (LONG)ButtonProc);
+		SetWindowLong(ctx->hwndBtnFixedRatio, GWL_USERDATA, (LONG)ctx);
 
 		SendMessage(ctx->hwndBtnVariable, BM_SETCHECK, BST_CHECKED, 0);
 
@@ -787,9 +797,12 @@ LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		SendMessage(ctx->hwndEditHeight, EM_LIMITTEXT, 5, 0);
 
 		ctx->hwndBtnResizeOutput = CreateWindow(L"BUTTON", L"Resize output:",
-							WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,
+							WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,
 							10, 200, 130, 20, hWnd, (HMENU)ID_BTN_RESIZE, 
 							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
+		SetWindowLong(ctx->hwndBtnResizeOutput, GWL_WNDPROC, (LONG)ButtonProc);
+		SetWindowLong(ctx->hwndBtnResizeOutput, GWL_USERDATA, (LONG)ctx);
 
 		ctx->hwndLblOutputWidth = CreateWindow(L"STATIC", L"Width:",
 							WS_VISIBLE | WS_CHILD,
@@ -826,6 +839,14 @@ LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 							10, 320, 125, 30, hWnd, (HMENU)ID_BTN_SAVE, 
 							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
 
+		SetWindowLong(ctx->hwndBtnSave, GWL_WNDPROC, (LONG)ButtonProc);
+		SetWindowLong(ctx->hwndBtnSave, GWL_USERDATA, (LONG)ctx);
+
+		ctx->hwndLblUrl = CreateWindow(L"STATIC", L"http://blog.c0la.se/",
+							WS_VISIBLE | WS_CHILD | SS_NOTIFY,
+							10, 360, 130, 20, hWnd, (HMENU)ID_LBL_URL, 
+							(HINSTANCE)GetWindowLong(hWnd, GWL_HINSTANCE), NULL);
+
 		break;
 	case WM_COMMAND:
 		wmId = LOWORD(wParam);
@@ -858,26 +879,18 @@ LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			ctx->selectionMode = FIXED_SIZE;
 			EnableWindow(ctx->hwndEditWidth, TRUE);
 			EnableWindow(ctx->hwndEditHeight, TRUE);
-			SendMessage(hWnd, WM_COMMAND, (ID_EDIT_WIDTH & 0xFFFF) | ((EN_CHANGE & 0xFFFF) << 16), 0);
-			SendMessage(hWnd, WM_COMMAND, (ID_EDIT_HEIGHT & 0xFFFF) | ((EN_CHANGE & 0xFFFF) << 16), 0);
 			return 0;
 		case ID_BTN_FIXED_RATIO:
 			ctx->selectionMode = FIXED_RATIO;
 			EnableWindow(ctx->hwndEditWidth, TRUE);
 			EnableWindow(ctx->hwndEditHeight, TRUE);
-			SendMessage(hWnd, WM_COMMAND, (ID_EDIT_WIDTH & 0xFFFF) | ((EN_CHANGE & 0xFFFF) << 16), 0);
-			SendMessage(hWnd, WM_COMMAND, (ID_EDIT_HEIGHT & 0xFFFF) | ((EN_CHANGE & 0xFFFF) << 16), 0);
 			return 0;
 		case ID_EDIT_WIDTH:
 			if (wmEvent == EN_CHANGE) {
 				SendMessage(ctx->hwndEditWidth, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
 				value = _wtoi(szSizeBuffer);
 				if (value < ctx->imageWidth) {
-					if (ctx->selectionMode == FIXED_SIZE) {
-						ctx->modeWidth = (int)(ctx->imageWidth / (double)ctx->img->GetWidth() * value);
-					} else {
-						ctx->modeWidth = value;
-					}
+					ctx->modeWidth = value;
 				} else {
 					wsprintf(szSizeBuffer, L"%d", ctx->imageWidth - 1);
 					SendMessage(ctx->hwndEditWidth, WM_SETTEXT, 0, (LPARAM)szSizeBuffer);
@@ -889,11 +902,7 @@ LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				SendMessage(ctx->hwndEditHeight, WM_GETTEXT, 9, (LPARAM)szSizeBuffer);
 				value = _wtoi(szSizeBuffer);
 				if (value < ctx->imageHeight) {
-					if (ctx->selectionMode == FIXED_SIZE) {
-						ctx->modeHeight = (int)(ctx->imageHeight / (double)ctx->img->GetHeight() * value);
-					} else {
-						ctx->modeHeight = value;
-					}
+					ctx->modeHeight = value;
 				} else {
 					wsprintf(szSizeBuffer, L"%d", ctx->imageHeight - 1);
 					SendMessage(ctx->hwndEditHeight, WM_SETTEXT, 0, (LPARAM)szSizeBuffer);
@@ -902,6 +911,9 @@ LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			return 0;
 		case ID_BTN_SAVE:
 			Save(ctx->hwndCropFrame, ctx);
+			return 0;
+		case ID_LBL_URL:
+			ShellExecute(NULL, L"open", L"http://blog.c0la.se/", NULL, NULL, SW_SHOWNORMAL);
 			return 0;
 		}
 		break;
@@ -912,13 +924,37 @@ LRESULT CALLBACK ToolProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-LRESULT CALLBACK NumOnlyEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK ButtonProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	HWND next;
 	ApplicationContext *ctx = (ApplicationContext*)GetWindowLong(hWnd, GWL_USERDATA);
 
 	switch (msg)
 	{
 	case WM_CHAR:
+		if (wParam == 9) {
+			next = GetNextDlgTabItem(ctx->hwndToolFrame, hWnd, FALSE);
+			SetFocus(next);
+		}
+	}
+
+	return CallWindowProc(ctx->buttonProc, hWnd, msg, wParam, lParam);
+}
+
+
+LRESULT CALLBACK NumOnlyEditProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	HWND next;
+	ApplicationContext *ctx = (ApplicationContext*)GetWindowLong(hWnd, GWL_USERDATA);
+
+	switch (msg)
+	{
+	case WM_CHAR:
+		if (wParam == 9) {
+			next = GetNextDlgTabItem(ctx->hwndToolFrame, hWnd, FALSE);
+			SetFocus(next);
+		}
+
 		// Only allow digits and backspace (ASCII 8)
 		if (!iswdigit(wParam) && wParam != 8) {
 			return 0;

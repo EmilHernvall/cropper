@@ -14,6 +14,7 @@
 #define ID_BTN_RESIZE					106
 #define ID_EDIT_OUTPUTWIDTH				107
 #define ID_EDIT_OUTPUTHEIGHT			108
+#define ID_LBL_URL						109
 
 enum SelectionMode {
 	VARIABLE = 1,
@@ -32,9 +33,10 @@ typedef struct {
 	HWND hwndLblOutputWidth, hwndLblOutputHeight;
 	HWND hwndEditOutputWidth, hwndEditOutputHeight;
 	HWND hwndBtnSave;
+	HWND hwndLblUrl;
 
 	// Edit WndProcs
-	WNDPROC editProc;
+	WNDPROC editProc, buttonProc;
 
 	// The loaded image
 	Image *img;
